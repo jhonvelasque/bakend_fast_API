@@ -1,108 +1,125 @@
-from fastapi import FastAPI
-import pandas as pd
+from fastapi import FastAPI, Body ,Path ,Query
+#path sirve para los parametros de ruta 
+from fastapi.responses import HTMLResponse
+#fiel es una clase de validacion
+from  pydantic import BaseModel,Field
+from typing import Optional
+#creando una istancia de fasAPI
+app =FastAPI()
+#cambiando el titulo
+app.title = 'La apliacion de jhon'
+app.version='0.0.1'
+#todos estos cambio lo puedes ver mas rapidoe en el metodo post 
+class Movie(BaseModel):
+    id:Optional[int]=None
+    #id:int |None=None ->otraforma de poner un atributo opcional 
+    #min_length son loscaracteres minimos
+    #max_length son los caracteres maximos
+    title :str=Field(min_length=5,max_length =15)
+    overview:str=Field(min_length=5,max_length =15)
+    #le > menor igual
+    #ge -> mayor igua;
+    year : int= Field(le=2000)
+    rating:float= Field(ge=0,le=10)
+    category : str=Field(min_lengt=2)
+    #nota la clase Config es UN valor fijo que no debe cambiar al igual que la key example
+    class Config :
+        schema_extra={
+            'example':{
+            'title':'mi pelicula',
+            'overview':'la dewscripcion de la pelicula',
+            'year':2022,
+            'rating':9.8,
+            'category':'Accion'
+            }
+        }
 
-app = FastAPI(title= "API to consult Streaming platforms data",
-    description= "Amazon, Disney, Hulu and Netflix",   
-)
+movies = [
+    {
+        'id': 1,
+        'title': 'Avatar1',
+        'overview': "En un exuberante planeta llamado Pandora viven los Na'vi, seres que ...",
+        'year': '2009',
+        'rating': 7.8,
+        'category': 'Acción'    
+    } ,
+    {
+        'id': 2,
+        'title': 'Avatar2',
+        'overview': "En un exuberante planeta llamado Pandora viven los Na'vi, seres que ...",
+        'year': '2022',
+        'rating': 7.8,
+        'category': 'Acción'    
+    } 
+]
+#@app.put('/ruta/{parametro necesario}',tags=['a que etiqueta pertenece'])
+@app.get('/', tags=['home'])
+def home():
+    return HTMLResponse('<h1 style=color:blue> hola mundo </h1>''<br style=color:blue>mi primera api estoy feliz</br>')
 
-# Cargamos la base de datos al iniciar Uvicorn
-@app.on_event('startup')
-def startup():
-    global DF; global plataformas
-    DF = pd.read_csv('Datasets/All_titles.csv')
-    plataformas = ['Amazon', 'Hulu', 'Netflix', 'Disney']
 
-# Cargamos información sobre el proyecto
-@app.get('/')
-async def index():
-    return 'PI01 para Henry de Guillermo Fernández'
 
-# Cargamos información sobre la API
-@app.get('/about')
-async def about():
-    return 'API creada con FastAPI y uvicorn'
+@app.get('/movies',tags = ['movies'])
+def get_movies():
+    return movies
 
-# En todas las funciones que usen formato str, se eliminan las ' interiores con el comando replace, y se aplica la primer
-# letra mayúscula, para que coincida con el Dataset, independiente de cómo lo ingresa el cliente
+#buscando por id
+@app.get('/movies/{id}',tags = ['movies'])
+def get_movie(id: int = Path(ge=1,le=2000)):
+    for item in movies:
+        if item['id']==id:
+            return item
+    return []
 
-# Título de más duración, por plataforma y por año:  
-# URL para realizar la consulta /get_max_duration(año,'plataforma','[min o season]')
-@app.get('/get_max_duration({year},{platform},{min_season})')
-async def get_max_duration(
-                            year:int,
-                            platform:str,
-                            min_season:str):
-    platform = platform.replace("'","")
-    platform = platform.capitalize()
-    if platform not in plataformas: return f'Sin datos para {platform}' # Verificacion de plataforma
-    min_season = min_season.replace("'","")
-    min_season_or = min_season.lower()
-    if min_season_or == 'min': min_season = 'Movie'    # Determinamos si es pelicula o serie de acuerdo al parámetro
-    elif min_season_or == 'season': min_season = 'TV Show'
-    else: return f'Se debe especificar el tipo de duración como "min" o "season"'   # Verificación de tipo
-    # Aplicamos una máscara de acuerdo a los parámetros
-    Max_duration = DF[(DF.Platform == platform) & (DF.Release_year == year) & ((DF.Type == min_season) )]
-    if Max_duration.shape[0] == 0: return f'Sin datos del año {year}'  # Verificacion de año
-    # Retornamos el valor del título
-    idx = Max_duration.Duration.idxmax()
-    return DF.loc[idx].Title, f'{DF.loc[idx].Duration} {min_season_or}s'
+#utilizando los parametros query 
+#solo se tiene que señalarel tipo de parametro
+@app.get('/movies/',tags=['movies'])
+def get_movies_by_category(category:str, year:int):
+    return category ,year
 
-# Total de películas y series, por plataforma:
-# URL para realizar la consulta /get_count_platform('platform')
-#async es una funcion asincrona (ocurre al mismo tiempo) que se acede a la rura
-@app.get('/get_count_platform({platform})')
-async def get_count_platform(platform:str):
-    platform = platform.replace("'","")
-    platform = platform.capitalize()
-    if platform not in plataformas: return f'Sin datos para {platform}' # Verificacion de plataforma
-    Count_platform = DF[(DF.Platform == platform)]  # Aplicamos una máscara de acuerdo al parámetro
-    movies = int(Count_platform[Count_platform.Type == 'Movie'].Type.value_counts()[0]) # Contamos la cantidad de ocurrencias
-    series = int(Count_platform[Count_platform.Type == 'TV Show'].Type.value_counts()[0])
-    # Retornamos el valor en formato str para poder aclarar a qué corresponde cada cantidad
-    return platform, f'Movie: {movies}', f'TV Show: {series}'
+# funcion pra filtrar por sus categorias usando filter 
+@app.get('/movies_categorias/', tags = ['movies'])
+def get_movies_by_category(category: str=Query(min_length=5, max_length=20)):
+    #filter(function, iterable)
+   return list(filter(lambda item: item['category'] == category , movies))
 
-# Género con mayor ocurrencias, y su plataforma:  
-# URL para realizar la consulta /get_listedin('genre')
-@app.get('/get_listedin({genre})')
-async def get_listedin(genre:str):
-    genre = genre.replace("'","")
-    genre = genre.capitalize()
-    Plataformas, apariciones = list(DF.Platform.unique()), list()   # Creamos una lista con las plataformas, y otra vacía
-    for elem in Plataformas:    # Iteramos para cada plataforma
-        DF_por_plataforma = DF[(DF.Platform == elem)]   # Aplicamos una máscara de acuerdo al parámetro
-        # Creamos una columna que nos indica si se encuentra el parámetro
-        DF_por_plataforma['Ind'] = DF_por_plataforma.Listed_in.str.find(genre)
-        # Contamos la cantidad de veces que se encuentra el parámetro y lo agregamos a la lista
-        apariciones.append(DF_por_plataforma[DF_por_plataforma.Ind != -1].Ind.shape[0])
-    if apariciones == [0,0,0,0]: return f'El género {genre} no ha sido encontrado'     # Verificacion de genero
-    # Retornamos la plataforma en la que el parámetro  más se repite y la cantidad
-    return max(apariciones), Plataformas[apariciones.index(max(apariciones))]
+""" @app.get('/movies/', tags=['movies'])
+def get_movies_by_category(category: str):
+    return [movie for movie in movies if movie['genre'] == category] """
+#Utilizando el metodo post que nos permite registrar nuestros datos
+@app.post('/movies',tags=['movies'])
+def create_movie(movie: Movie):
+    movies.append(movie)
+    return movies 
+#modificando los datos a partir de encontrar  un dato
+@app.put('/movies/{id}',tags=['movies'])
+def update_movie(id:int,movie:Movie):
+    for item in movies:
+        if item["id"]==id:
+            item["title"]=movie.title,
+            item["overview"]=movie.overview,
+            item["year"]=movie.year,
+            item["rating"]=movie.rating,
+            item["category"]=movie.category
+            return movies
+@app.put('/movies/{id}', tags=['movies'])
+#otra forma
+# async def update_movie(id: int, movie: Movie):
 
-# Actor con mayor ocurrencias, por plataforma y por año:
-# URL para realizar la consulta /get_actor('Netflix',2018)
-@app.get('/get_actor({platform},{year})')
-async def get_actor(
-                    platform:str,
-                    year:int):
-    platform = platform.replace("'","")
-    platform = platform.capitalize()
-    if platform not in plataformas: return f'Sin datos para {platform}' # Verificacion de plataforma
-    actores, repeticiones = list(), list()  # Creamos dos listas vacías para colocar cada actor y la cantidad de veces
-    # Aplicamos máscara para obtener una lista de listas de actores, que no tengan nulos
-    Cast_list = list(DF[(DF.Platform == platform) & (DF.Release_year == year)].Cast.fillna('Sin_datos'))
-
-    for each in Cast_list:  # Iteramos cada elemento, que es a su vez una lista de actores
-        if not(each == 'Sin_datos' or each is None):    # Validamos que tenga datos
-            lista = each.split(",") # Separamos por comas, para obtener una lista nueva cuyos elementos sean los actores
-            for elem in lista:  # Iteramos sobre esta nueva lista de actores
-                elem = elem.strip() # Limpiamos los espacios vacíos
-                # Si el actor ya se encuentra en 'actores', entonces sumará 1 en 'apariciones' con el mismo índice
-                if elem in actores: 
-                    repeticiones[actores.index(elem)] += 1
-                # De lo contrario, agregará el actor en 'actores' y 1 en 'apariciones'
-                else:    
-                    actores.append(elem)
-                    repeticiones.append(1)
-    if actores == []: return f'Sin datos del año {year}'  # Verificacion de año
-    # Retornamos la plataforma, el actor que más se repite en esa plataforma y ese año, y cuántas veces lo hace
-    return platform, max(repeticiones), actores[repeticiones.index(max(repeticiones))]
+#     for index, item in enumerate(movies):
+#         if item["id"] == id:
+#             movies[index].update(movie)
+#             movies[index]["id"] = id
+#             return movies[index]
+    
+#eliminando a partir del id
+@app.delete('/movies/{id}',tags=['movies'])
+def delete_movies(id:int):
+    for item in movies:
+        if item in movies:
+            if item["id"]==id:
+                #funcion de lista para eliminar un elemento
+                movies.remove(item)
+                return movies
+            else :
+                return "no se encontro la pelicula"
